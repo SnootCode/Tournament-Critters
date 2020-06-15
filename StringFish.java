@@ -36,6 +36,16 @@ SocialFish Development
    > Made of 'S', 'W', 'E', or 'O' for Same, Wall, Other, or Enemy
 - Some hardcoding relies on the arena being larger than certain distance wall-to-wall
    > Interesting Idea: Shrinking Arena, Walls replace Critters
+6/15/2020
+- Successful testing, various Critters including SoloSIVA, StringFish alwasy won in the end!
+- Current decisions are primarily based upon # of similar Critters nearby, then on enemies nearby.
+- Next: Add time gate mechanic, so smaller groups break apart?
+- Testing Round:
+   > 30 Bear; 60 Lion; 30 Giant; 30 SoloSIVA; 60 FlyTrap; 30 StringFish; Win
+   > 60 Bear; 60 Lion; 30 Giant; 30 SoloSIVA; 30 FlyTrap; 30 StringFish; Some Loss - overwhelmed by SIVA
+   > 1 & 2 neighbors & walls = spinning
+
+
 */
 
 /*
@@ -45,13 +55,14 @@ TA: Internet
 Project: Social Critter
 */ 
 
-// This Critter favors groups. It prefers to find a neighbor and attack only 
-// with similar Critters next to it.
-
-//      has a big tree of decisions. It prefers to attack, then moves.
-// It randomly decides whether to favor turning right or left. This means it
+// This Critter favors groups. If lonely, it prefers to flee. Once it finds a
+// similar critter it forms a group, assuming a defensive formation, and is
+// more likely to attack. When moving, it either favors left or right, depending
+// on how it was constructed (randomly Australian). Large groups tend to form
+// adjacent to walls, because it is safer (walls don't attack). This means it
 // cycles both clockwise and anti-clockwise, eliminating Bears and Giants.
 // It follows targets, and attempts to track those which pass by it.
+
 // If there's no way to avoid infection, it rotates toward infecter to impede
 // their progress, helping fellow Huskies revert it back to a Husky.
 
@@ -62,26 +73,26 @@ public class StringFish extends Critter {
    
    // Fields
    private Color color;
+   private final Color tropicalFish;
+   private final Color yellow;
    private Action action;
-   private String displayedLabel;
-   private int rotationCounter;
+   private String displayedLabel; // Current label
+   private String[] label; // Some possible labels
    private boolean australian; // Bias for right/left turns
    private Random r = new Random(); 
    private int lifespan;
-   private int friendCount; // How many friends are around?
-   private boolean northReached;
-   private String[] label;
-   private int timeLimit;
-   private final int TIME_LIMIT;
-   private int timeCooldown;
-   private int resetTurtle;
+   private int friendCount; // # of same critters around
+   private int enemyCount; // # of other critters around
+   private int timeLimit; // # turns left to stay in group
+   private final int TIME_LIMIT; // # turns critter stays in group
+   private int timeCooldown; // # turns until critter will find another group
    private String status;
-   private int enemyCount;
          
    // Constructor
    public StringFish() {
-      //Color jazzberry = new Color(179, 0, 89); // red, green, blue
-      color = new Color(179, 0, 89); 
+      tropicalFish = new Color(201, 255, 229); // red, green, blue
+      yellow = new Color(255, 255, 0);
+      color = tropicalFish; 
       displayedLabel = ":(";
       label = new String[] {":(", ":|", ":)", ":D", "XD"};
       australian = r.nextBoolean(); // True -> Right, False -> Left
@@ -90,8 +101,6 @@ public class StringFish extends Critter {
       timeLimit = TIME_LIMIT; // How many turns until they leave to find new friends
       timeCooldown = 0;
       friendCount = 0;
-      rotationCounter = 0;
-      resetTurtle = 0;
       status = "";
       enemyCount = 0;
    }
@@ -100,11 +109,8 @@ public class StringFish extends Critter {
    public Action getMove(CritterInfo info) {
       
       // ******** // Information
-      color = new Color(179, 0, 89);
-      
-      // Re-create status each turn, updating various counters. 
-         // Only time check should be performed, cleaner.
-      status = "";
+      color = tropicalFish; 
+      status = ""; // Re-create status each turn, updating various counters.
       friendCount = 0;
       enemyCount = 0;
          // Front Check
@@ -167,60 +173,11 @@ public class StringFish extends Critter {
       // Display happiness level. Turn into the happiness() method.
       displayedLabel = label[friendCount];
       if (enemyCount > 0) {
-         displayedLabel = "!"; // Alarm at noticing enemy/enemies
-         color = new Color(255, 0, 0);
+         displayedLabel = "8("; // Alarm at noticing enemy/enemies
+         color = yellow;
       }
       
       // ********** // Actions
-      
-      if (status.equals("SSSS") || status.equals("SWSS") || status.equals("SSWS") 
-      || status.equals("SSSW") || status.equals("SSWW") || status.equals("SWSW")) { 
-         // Totally Safe
-         action = Action.LEFT; // Party Spin!
-      } else if (friendCount == 0) { // No friends, lonely mode
-         // Lonely mode  
-         if (status.substring(0,1).equals("E")) { // Empty in front
-            action = Action.HOP;   
-         } else if (status.substring(0,1).equals("O")) { // Other in front
-            action = Action.INFECT;
-         } else { // Wall in front (NOT Same in front)
-            if (australian) {
-               action = Action.RIGHT;
-            } else {
-               action = Action.LEFT;
-            }            
-         }        
-      } else { // Some friends, not Total Safety
-         if (friendCount > 2) {
-         
-         } else { // 1 friend
-            if (status.substring(0,1).equals("E") || status.substring(3,4).equals("S")) { 
-               
-               
-               
-               action = Action.INFECT;
-            } else { // Imperfect
-            
-            }
-         }
-         
-         
-         
-         
-         
-         
-         
-         if (enemyCount > 0) {
-            // Enemies nearby!
-         
-         } 
-         
-         // If first letter = wall, must turn
-         // If 2nd, 3rd, 4th letter = other, must turn
-      } 
-
-
-      
       
       if (info.getFront() == Neighbor.OTHER) { // If enemy in front, infect
          action = Action.INFECT;
@@ -238,150 +195,130 @@ public class StringFish extends Critter {
                   action = Action.LEFT;
                }            
             }          
-         } else { // At least 1 SocialFish nearby
-            if (timeCooldown != 0 || timeLimit == 0) { // Not ready to be friendly OR time is up
-               // This section of code gets repeated. Turn into wander() method.
-               if (info.getFront() == Neighbor.EMPTY) {
-                  action = Action.HOP;   
-               } else {
-                  if (australian) {
-                     action = Action.RIGHT;
-                  } else {
+         } else if (friendCount == 1) { // 1 SocialFish nearby <>
+            if (enemyCount > 0) {
+               if ((info.getFront() == Neighbor.EMPTY) && (info.backThreat() 
+               || info.leftThreat() || info.rightThreat())) { // Threatened
+                  action = Action.HOP;
+               } else { // Not Threatened Yet
+                  if (info.getLeft() == Neighbor.OTHER) {
                      action = Action.LEFT;
-                  }            
-               }  
-            } else { // At least 1 SocialFish nearby AND I'm ready to socialize!
-               if (rotationCounter > 0) { // If mid-turn, keep turning
-                  // Repeated code, create turn() method
-                  if (australian) {
+                  } else if (info.getRight() == Neighbor.OTHER) {
                      action = Action.RIGHT;
-                  } else {
-                     action = Action.LEFT;
-                  }            
-                  rotationCounter--;
-               } else { // Decide what to do
-                  // Where are the other SocialFish, so I position myself well? <>
-                  if (info.getBack() == Neighbor.SAME) { // Fish behind
-                     if (info.getLeft() == Neighbor.SAME) { // Fish behind, left
-                        if (info.getRight() == Neighbor.SAME) { // Fish behind, left, right
-                           if (info.getFront() == Neighbor.SAME) { // Fish behind, left, right, front
-                              // Totally safe, party spin
-                              action = Action.LEFT;
-                                 // If came into school, spin 180 to point outwards
-                           }
-                        }
-                     } 
-                  } else if (info.getBack() == Neighbor.WALL) { // Wall behind
-                  
-                  } else if (info.getBack() == Neighbor.OTHER) { // Enemy behind
-                  
-                  } else { // Empty behind
-                  
-                  }
-                  // unfinished edit
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  if ((info.getBack() == Neighbor.SAME && info.getFront() == Neighbor.EMPTY) || 
-                     (info.getBack() == Neighbor.WALL && info.getFront() == Neighbor.EMPTY)) { // Safe. 
-                     // Turtle Mode: stay put, face opponent
-                     if (info.leftThreat()) { // reset turtle += -1; -1 is to the left, reset to zero
-                        resetTurtle--;
-                        action = Action.LEFT;
-                     } else if (info.rightThreat()) { // reset turtle += 1; +1 is to the right, reset to zero
-                        resetTurtle++;
+                  } else { // Enemy behind, Not in front
+                     // Turn 180, favoring empty space
+                     if (info.getRight() == Neighbor.EMPTY) {
                         action = Action.RIGHT;
-                     } else {
-                        if (resetTurtle != 0) { // Reset towards original position (0) 
-                           if (resetTurtle < 0) {
-                              resetTurtle++;
-                              action = Action.RIGHT;
-                           } else { // resetTurtle > 0
-                              resetTurtle--;
-                              action = Action.LEFT;
-                           }
-                           
-                             
-                        } else {
-                           action = Action.INFECT; 
-                        }
+                     } else { // Hopefully empty
+                        action = Action.LEFT;
                      }
-   
-                  } else { // Not Safe. Become Safe.
-                     if (info.getFront() == Neighbor.SAME) { // Facing SocialFish, face away!
-                        // Repeated code, create turn() method
-                        if (info.getLeft() == Neighbor.WALL) {
-                           action = Action.RIGHT; // Face away from wall
-                        } else if (info.getRight() == Neighbor.WALL) {
-                           action = Action.LEFT; // Face away from wall
-                        } else { // If Walls aren't nearby, randomize rotation             
+                  }
+               }
+            } else { // No enemies nearby
+               if (info.getBack() == Neighbor.SAME && info.getFront() == Neighbor.EMPTY) {
+                  // Safest Outcome
+                  action = Action.INFECT;
+               } else if (info.getBack() == Neighbor.SAME && info.getFront() == Neighbor.WALL) {
+                  if (info.getLeft() == Neighbor.WALL) {
+                     if (info.getRight() == Neighbor.WALL) {
+                        if (info.getBack() == Neighbor.WALL) {
+                           action = Action.INFECT; // Should never be reached, no 3 walls touch
+                        } else { // Turn 180, randomly
                            if (australian) {
                               action = Action.RIGHT;
                            } else {
                               action = Action.LEFT;
-                           }
-                        }      
-                     } else if (info.getLeft() == Neighbor.SAME) { // NOT facing SocialFish
-                        if (info.getRight() == Neighbor.SAME) { // Have a SocialFish on both sides fFf
-                           if (info.getFront() == Neighbor.WALL) { // <v>, become <^>
-                              rotationCounter = 2;
-                              // Repeated code, create turn() method
-                              if (australian) {
-                                 action = Action.RIGHT;
-                              } else {
-                                 action = Action.LEFT;
-                              }            
-                              rotationCounter--;
-                           } else { // Neighbor both sides, not facing wall
-                              action = Action.INFECT; // Safe
-                           }
-                        } else { // Neighbor only on Left                     
-                           action = Action.RIGHT; // Turn to <> position, away from neighbor
+                           } 
                         }
-                     } else { // No Neighbor on Left AND No Neighbor in Front
-                        if (info.getRight() == Neighbor.SAME) { // 
-                           action = Action.LEFT; // Turn to <> position, away from neighbor
-                        }
+                     } else {
+                        action = Action.RIGHT;
                      }
-                  }               
-               }             
-               // action = Action.LEFT; // If find a friend, spin in a circle
-               timeLimit--;
-               
-               // timeLimit += friendCount; // Balance so that smaller groups break apart faster than larger groups
+                  } else {
+                     action = Action.LEFT;
+                  }  
+               } else { // Get into <> or ^> position
+                  if (info.getFront() == Neighbor.SAME) {
+                     if (australian) {
+                        action = Action.RIGHT;
+                     } else {
+                        action = Action.LEFT;
+                     }
+                  } else if (info.getLeft() == Neighbor.SAME || info.getLeft() == Neighbor.WALL) {
+                     action = Action.RIGHT;
+                  } else if (info.getRight() == Neighbor.SAME || info.getRight() == Neighbor.WALL) { 
+                     action = Action.LEFT;
+                  } else {
+                     action = Action.INFECT;
+                  }
+               }
+            }  
+         } else if (friendCount == 2) { // 2 SocialFish nearby <^>       
+            if (enemyCount > 0) {
+               if ((info.getFront() == Neighbor.EMPTY) && (info.backThreat() 
+               || info.leftThreat() || info.rightThreat())) { // Threatened
+                  action = Action.HOP;
+               } else { // Not Threatened Yet
+                  if (info.getLeft() == Neighbor.OTHER) {
+                     action = Action.LEFT;
+                  } else if (info.getRight() == Neighbor.OTHER) {
+                     action = Action.RIGHT;
+                  } else { // Enemy behind, Not in front
+                     // Turn 180, favoring empty space
+                     if (info.getRight() == Neighbor.EMPTY) {
+                        action = Action.RIGHT;
+                     } else { // Hopefully empty
+                        action = Action.LEFT;
+                     }
+                  }
+               }
+            } else { // No enemies nearby
+               // Make <^> shape, or L shape
+               if (info.getFront() == Neighbor.SAME || info.getFront() == Neighbor.WALL) { // Turn away
+                  if (info.getLeft() == Neighbor.SAME || info.getLeft() == Neighbor.WALL) { // Not turn left
+                     if (info.getRight() == Neighbor.SAME || info.getRight() == Neighbor.WALL) { // Not turn right
+                        // Must turn around
+                        if (info.getRight() == Neighbor.WALL) { // Avoid facing wall at any point
+                           action = Action.LEFT;
+                        } else if (info.getLeft() == Neighbor.WALL) {
+                           action = Action.INFECT;
+                        } else {
+                           action = Action.RIGHT;
+                        }
+                     } else {
+                        action = Action.RIGHT;
+                     } 
+                  } action = Action.LEFT;
+               } else {
+                  action = Action.INFECT;
+               }
             }
-         }
+         } else if (friendCount == 3) { // 3 SocialFish nearby
+            // Make a school. If you have 3 nearby, move to the open space and take them with you. 
+               // Or if I don't learn to do that, send this one off on its own?
+            if (info.getFront() == Neighbor.EMPTY) { 
+               action = Action.HOP;
+            } else if (info.getLeft() == Neighbor.EMPTY) { // By looking for empty space, it will also face an enemy
+               action = Action.LEFT;
+            } else if (info.getRight() == Neighbor.EMPTY) {
+               action = Action.RIGHT;
+            } else if (info.getBack() != Neighbor.WALL) { // Back empty/enemy, must be if other three are taken up
+               action = Action.LEFT; 
+            } else {
+               action = Action.INFECT; // Infect attempt if have back to a wall & 3 neighbors
+            }     
+         } else { // 4 SocialFish nearby
+            action = Action.INFECT; // Nothing else to do :)
+         }      
       }
       return action;   
    }
    
-   /*
-   // Returns the count of adjacent friendly Critters
-   public int nearby() {
-      int count = 0;
-      if (info.getFront() == Neighbor.SAME) {
-         count++;
-      }
-      if (info.getLeft() == Neighbor.SAME) {
-         count++;
-      }
-      if (info.getRight() == Neighbor.SAME) {
-         count++;
-      }
-      if (info.getBack() == Neighbor.SAME) {
-         count++;
-      }
-      return count;
-   } */
-   
+   // Post: returns Critter color.
    public Color getColor() {
       return color;
    }
    
+   // Post: returns Critter label.
    public String toString() {
       return displayedLabel;
    }
